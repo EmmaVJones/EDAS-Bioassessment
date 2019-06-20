@@ -1,0 +1,198 @@
+---
+title: 'Virginia Department of Environmental Quality Biological Monitoring Program:
+  Benthic Assessment Factsheet'
+output: flexdashboard:: flex_dashboard
+always_allow_html: yes
+---
+
+
+<script>
+   $(document).ready(function() {
+     $head = $('#header');
+     $head.prepend('<img src=\"Logo.png\" style=\"float: right;width: 150px;\"/>')
+   });
+</script>
+
+
+```{r setup, include=FALSE, message=FALSE, warning=FALSE}
+
+
+  
+  
+knitr::opts_chunk$set(echo = FALSE)
+
+#library(tidyverse)
+library(readxl)
+library(DT)
+library(RODBC)
+library(dplyr)
+library(ggplot2)
+library(scales)
+
+```
+
+```{r read in data, message=FALSE, warning=FALSE}
+
+# Read in data and functions
+
+
+source('accessConnection.R')
+
+#User enter data
+
+UserStation<-"4ASRE015.43"
+startyear<- 2009
+endyear<- 2014
+method<-IR$AssessmentMethod
+
+
+annualdata<-selectStation(UserStation, startyear, endyear)
+StationQRY<-stationqry(UserStation)
+IRquery<-IRqry(UserStation)
+
+
+#Habitat data manipulation
+hab<-selecthabitatStation(UserStation, startyear, endyear)
+
+totHab <- hab %>%
+  group_by(StationID, CollDate ) %>%
+  mutate(TotalHabitat = sum(HabValue))
+
+
+
+```
+
+
+**Regional Office:** &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; `r unique(StationQRY$DEQREG)`
+
+**River Basin:** &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; `r unique(StationQRY$Basin)`
+
+**Stream Name:** &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`r unique(StationQRY$StreamName)`
+
+**Location Information:** &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`r unique(StationQRY$Location)`
+
+**Station ID:** &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`r unique(annualdata$StationID)`
+
+**Collection Method:** &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`r unique(annualdata$CollMeth)`
+
+**Assessment Method: ** &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`r unique(IRquery$AssessmentMethod)`
+
+**Reviewer:** &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`r unique(IRquery$Reviewer)`
+
+
+
+
+
+
+#### Biological Assessments 
+```{r table, message=FALSE, warning=FALSE}
+
+Table(annualdata)
+
+```
+
+****
+
+#### Average Seasonal Scores
+
+```{r table2, message=FALSE, warning=FALSE}
+renderDataTable(SumTable(annualdata))
+
+
+```
+
+
+Replicate samples were included in total and seasonal averages. [^1] 
+
+****
+
+#### VSCI Scores
+```{r graph, message=FALSE, warning=FALSE}
+
+bugplot(annualdata)
+
+```
+
+****
+
+
+
+#### Individual metrics
+```{r parameter table, message=FALSE, warning=FALSE}
+
+bugparms(annualdata)
+
+```
+
+****
+
+<center>
+
+![Habitat Metrics Legend](HabitatColor.jpg)
+
+</center>
+
+****
+
+#### Total Habitat Scores
+
+```{r habitat table, message=FALSE, warning=FALSE}
+
+Test(totHab)
+
+
+```
+
+<center>
+
+![Stressor Analysis Legend](StressorColors_updatedForColorblind.JPG)
+
+<center>
+
+
+
+```{r habitat plot, message=FALSE, warning=FALSE}
+
+
+TestPlot(totHab)
+
+
+```
+
+
+****
+
+**Are there any seasonal differences noted?**
+
+`r unique(IRquery$SeasonalDifferences)`
+
+
+
+**Summary of any comments associated with assessments**
+
+`r unique(IRquery$SummaryAssessment)`
+
+
+**Any factors observed in watershed that may be affecting the benthic community?**
+
+`r unique(IRquery$FactorsWatershed)`
+
+
+**Have there been any recent changes in activity in the watershed that may have affected the more recent bioassessments.  Are these changes likely to affect the benthic community for a short or long term basis?**
+
+`r unique(IRquery$RecentChange)`
+
+
+
+**Final Assessment Rating:**
+`r unique(IRquery$FinalAssessment)`
+
+
+
+```{r save to folder, message=FALSE, warning=FALSE}
+#rmarkdown::render(input='Markdownstart.Rmd',
+ #                 output_file = paste(unique(UserStation), unique(IRquery$IRYear), unique(IRquery$AssessmentMethod), unique(IRquery$CollectorID), '.html', sep='_'),
+  #                output_dir="C:/Backup/GitHub/reports")
+
+
+```

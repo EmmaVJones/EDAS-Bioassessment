@@ -1,0 +1,511 @@
+---
+title: "Bioassessment Tool"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(tidyverse)
+library(shiny)
+library(flexdashboard)
+library(readxl)
+library(DT)
+library(RODBC)
+library(dplyr)
+library(ggplot2)
+library(scales)
+library(crosstalk)
+library(plotly)
+
+```
+
+
+Column {.sidebar}
+-----------------------------------------------------------------------
+
+
+### Select the Collector ID and Basin
+
+
+```{r read in data, message=FALSE, warning=FALSE}
+
+# Read in data and functions
+
+
+source('accessConnection.R')
+
+SCIquery <- sqlQuery(channel, 'SELECT * FROM VSCIIR2020')
+
+Stationsquery<- sqlQuery(channel, 'SELECT * FROM Stations')
+
+
+bugplot<-function(annualdata) {
+  if(method=="VCPMI65-Chowan"|| method=="VCPMI63+Chowan"){ ## Need to add Assessment column to VSCIIR2020 table 
+    ggplot(annualdata, aes(x=CollDate, y=`Fam SCI`, fill=Season))+
+      geom_col()+
+      scale_fill_manual("Season", values = c("Fall" = "black", "Spring" = "dark grey"))+
+      labs(x="Collection Year", y="VCPMI")+
+      theme(axis.text=element_text(size=14, face="bold"), legend.text=element_text(size=14),
+            legend.title = element_text(size=14, face="bold"),
+            axis.title=element_text(size=14, face="bold")) +
+      scale_y_continuous(name="VCPMI", breaks=seq(0, 100, 10),limits=c(0,100))+
+      scale_x_datetime(date_breaks='1 year', date_labels =  "%Y")+
+      geom_hline_interactive(yintercept=40, color="red", size=1)+
+      theme(axis.text.x=element_text(angle=45,hjust=1))
+  }else{
+    ggplot(annualdata, aes(x=CollDate, y=`Fam SCI`, fill=Season))+
+      geom_col()+
+      scale_fill_manual("Season", values = c("Fall" = "black", "Spring" = "dark grey"))+
+      labs(x="Collection Year", y="VSCI")+
+      theme(axis.text=element_text(size=14, face="bold"), legend.text=element_text(size=14),
+            legend.title = element_text(size=14, face="bold"),
+            axis.title=element_text(size=14, face="bold")) +
+      scale_y_continuous(name="VSCI", breaks=seq(0, 100, 10),limits=c(0,100))+
+      scale_x_datetime(date_breaks='1 year', date_labels =  "%Y")+
+      geom_hline(yintercept=60, color="red", size=1)+
+      theme(axis.text.x=element_text(angle=45,hjust=1))
+  }
+  
+}
+
+
+VSCItester <- function(VSCI){
+  
+  message1 <- NA
+  
+  for (i in 1:length(VSCI)){
+    
+    if(is.na(VSCI[i])){
+      message1[i] <- 'Not sampled'
+    }else{
+      if(VSCI[i] >= 60){message1[i] <- 'Not Impaired'}
+      if(VSCI[i] < 60){message1[i] <- 'Impaired'}
+    }
+    
+  }
+  return(message1)
+  
+}
+
+
+VCPMItester <- function(VSCI){
+  
+  message1 <- NA
+  
+  for (i in 1:length(VSCI)){
+    
+    if(is.na(VSCI[i])){
+      message1[i] <- 'Not sampled'
+    }else{
+      if(VSCI[i] >= 40){message1[i] <- 'Not Impaired'}
+      if(VSCI[i] < 40){message1[i] <- 'Impaired'}
+    }
+    
+  }
+  return(message1)
+  
+}
+
+basicTable <- function(annualdata){
+  # grab info we want from input dataframe
+  if (method=="VCPMI"){ 
+    tableData <- select(annualdata, Year, Season, `Fam SCI`, RepNum) %>%
+      spread(Season, `Fam SCI`) %>%
+      mutate(`Spring VCPMI` = as.numeric(format(Spring, digits=3)),
+                               `Spring Assessment` = VSCItester(`Spring VCPMI`),
+                               `Fall VCPMI` = as.numeric(format(Fall, digits=3)),
+                               `Fall Assessment` = VCPMItester(`Fall VCPMI`)) %>%
+      select(Year, RepNum, `Spring VCPMI`, `Spring Assessment`, `Fall VCPMI`, `Fall Assessment`)
+    
+  }else{
+    tableData <- select(annualdata, Year, Season, `Fam SCI`, RepNum) %>%
+      spread(Season, `Fam SCI`) %>%
+      mutate(`Spring VSCI` = as.numeric(format(Spring, digits=3)),
+                     `Spring Assessment` = VSCItester(`Spring VSCI`),
+                     `Fall VSCI` = as.numeric(format(Fall, digits=3)),
+                     `Fall Assessment` = VSCItester(`Fall VSCI`)) %>%
+      select(Year, RepNum,  `Spring VSCI`, `Spring Assessment`, `Fall VSCI`, `Fall Assessment`)
+  }
+   
+  #make table the way we want
+  datatable(tableData, rownames=F, class = 'cell-border stripe',
+            options = list(pageLength= nrow(tableData), dom = 't',
+                                                    initComplete = JS(
+                                                      "function(settings, json) {",
+                                                      "$(this.api().table().header()).css({'background-color': '#636363', 'color': '#fff', 'font-size': '170%'});",
+                                                      "}"))) %>%
+    formatStyle('Fall Assessment', textAlign = 'center') %>%
+    formatStyle('Spring Assessment', textAlign = 'center')%>%
+    formatStyle(c('Fall Assessment', 'Fall VSCI'), 'Fall Assessment', backgroundColor = styleEqual(c('Not Sampled'), c('gray'), default = 'white'))%>%
+    formatStyle(c('Spring Assessment', 'Spring VSCI'), 'Spring Assessment', backgroundColor = styleEqual(c('Not sampled'), c('gray'), default = 'white'))%>%
+    formatStyle(columns=c(1,2,3,4,5,6), fontSize='150%')
+  
+}
+
+
+SpringTable <- function(annualdata){
+  # grab info we want from input dataframe
+  if (method=="VCPMI"){ 
+    tableData <- select(annualdata, Year, Season, `Fam SCI`, RepNum) %>%
+      spread(Season, `Fam SCI`) %>%
+      mutate(`Spring VCPMI` = as.numeric(format(Spring, digits=3)),
+             `Spring Assessment` = VCPMItester(`Spring VCPMI`),
+             `Fall VCPMI` = NA,
+             `Fall Assessment` = VSCItester(`Fall VCPMI`)) %>%
+      select(Year, RepNum,  `Spring VCPMI`, `Spring Assessment`, `Fall VCPMI`, `Fall Assessment`)
+    
+  }else{
+    tableData <- select(annualdata, Year, Season, `Fam SCI`, RepNum) %>%
+      spread(Season, `Fam SCI`) %>%
+      mutate(`Spring VSCI` = as.numeric(format(Spring, digits=3)),
+             `Spring Assessment` = VSCItester(`Spring VSCI`),
+             `Fall VSCI` = NA,
+             `Fall Assessment` = VSCItester(`Fall VSCI`)) %>%
+      select(Year, RepNum, `Spring VSCI`, `Spring Assessment`, `Fall VSCI`, `Fall Assessment`)
+  }
+  #make table the way we want
+  datatable(tableData, rownames=F,class = 'cell-border stripe', options = list(pageLength= nrow(tableData), dom = 't',
+                                                  initComplete = JS(
+                                                    "function(settings, json) {",
+                                                    "$(this.api().table().header()).css({'background-color': '#636363', 'color': '#fff', 'font-size': '170%'});",
+                                                    "}"))) %>%
+    formatStyle('Fall Assessment', textAlign = 'center') %>%
+    formatStyle('Spring Assessment', textAlign = 'center')%>%
+    formatStyle(c('Fall Assessment', 'Fall VSCI'), 'Fall Assessment', backgroundColor = styleEqual(c('Not Sampled'), c('gray'), default = 'white'))%>%
+    formatStyle(c('Spring Assessment', 'Spring VSCI'), 'Spring Assessment', backgroundColor = styleEqual(c('Not sampled'), c('gray'), default = 'white'))%>%
+    formatStyle(columns=c(1,2,3,4,5,6), fontSize='150%')
+  
+}
+
+FallTable <- function(annualdata){
+  # grab info we want from input dataframe
+  if (method=="VCPMI"){ 
+    tableData <- select(annualdata, Year, Season, `Fam SCI`, RepNum) %>%
+      spread(Season, `Fam SCI`) %>%
+      mutate(`Spring VCPMI` = NA,
+             `Spring Assessment` = VCPMItester(`Spring VCPMI`),
+             `Fall VCPMI` = as.numeric(format(Fall, digits=3)),
+             `Fall Assessment` = VSCItester(`Fall VCPMI`)) %>%
+      select(Year,  RepNum, `Spring VCPMI`, `Spring Assessment`, `Fall VCPMI`, `Fall Assessment`)
+    
+  }else{
+    tableData <- select(annualdata, Year, Season, `Fam SCI`, RepNum) %>%
+      spread(Season, `Fam SCI`) %>%
+      mutate(`Spring VSCI` = NA,
+             `Spring Assessment` = VSCItester(`Spring VSCI`),
+             `Fall VSCI` = as.numeric(format(Fall, digits=3)),
+             `Fall Assessment` = VSCItester(`Fall VSCI`)) %>%
+      select(Year, RepNum, `Spring VSCI`, `Spring Assessment`, `Fall VSCI`, `Fall Assessment`)
+  }
+  #make table the way we want
+  datatable(tableData, rownames=F,class = 'cell-border stripe', options = list(pageLength= nrow(tableData), dom = 't', 
+                                                  initComplete = JS( 
+                                                    "function(settings, json) {",
+                                                    "$(this.api().table().header()).css({'background-color': '#636363', 'color': '#fff', 'font-size': '170%'});",
+                                                    "}"))) %>%
+    formatStyle('Fall Assessment', textAlign = 'center') %>%
+    formatStyle('Spring Assessment', textAlign = 'center')%>%
+    formatStyle(c('Fall Assessment', 'Fall VSCI'), 'Fall Assessment', backgroundColor = styleEqual(c('Not Sampled'), c('gray'), default = 'white'))%>%
+    formatStyle(c('Spring Assessment', 'Spring VSCI'), 'Spring Assessment', backgroundColor = styleEqual(c('Not sampled'), c('gray'), default = 'white'))%>%
+    formatStyle(columns=c(1,2,3,4,5,6), fontSize='150%')
+  
+}
+
+
+Table<- function (annualdata){
+  if("Spring" %in% annualdata$Season && "Fall" %in% annualdata$Season){
+    basicTable(annualdata)
+  }else{
+    if("Spring" %in% annualdata$Season){
+      SpringTable(annualdata)
+    }else{
+      FallTable(annualdata)
+    }
+  }
+}
+
+
+#Habiat manipulations
+totalHab <- sqlQuery(channel,'SELECT * FROM HabValues')
+
+totHabCon <- sqlQuery(channel,'SELECT * FROM HabSamps')
+
+totalHabitat <- suppressWarnings(left_join(totalHab,totHabCon, by=c('HabSampID', 'Comments','EnterDate')))
+
+
+rm(totHabCon); rm(totalHab)
+
+
+#User enter data
+SCIquery <- sqlQuery(channel, 'SELECT * FROM VSCIIR2020')
+
+
+shared_IR<-SharedData$new(IR, ~StationID, group="IR2020")
+shared_VSCI<-SharedData$new(SCIquery, ~StationID, group="IR2020")
+
+
+
+bscols(
+  list(
+    filter_checkbox("CollectorID", "Collector ID", shared_IR, ~CollectorID, inline = TRUE),
+    filter_select("Basin", "Basin", shared_IR, ~Basin),
+    filter_select("StationID", "Station ID", shared_VSCI, ~StationID)
+  ))
+
+
+
+
+```
+
+Column {.tabset}
+-------------------------------------
+
+### Biological information
+
+```{r}
+
+vsci <- highlight_key(shared_VSCI)
+
+
+#Plots and autopopulates but I can't get the bars to become wider as you select just one station or get the VSCI line to appear after changing the station! HELPPP
+
+ 
+bscols(
+  ggplotly(bugplot(shared_VSCI), dynamicTicks = "y")%>%
+  layout(dragmode='zoom', hovermode='CollDate')%>%
+  style(bargap= 0.9)
+  #datatable(Table(shared_VSCI))
+  #It doesn't like the select()
+  
+  
+)
+
+
+
+
+
+```
+
+### Habitat Information
+
+```{r habitat information }
+#totalHab <- sqlQuery(channel,'SELECT * FROM HabValues')
+#totHabCon <- sqlQuery(channel,'SELECT * FROM HabSamps')
+
+
+
+
+totHab <- totalHabitat %>%
+  group_by(StationID, CollDate ) %>%
+  mutate(TotalHabitat = sum(HabValue))
+
+shared_Hab<- SharedData$new(totHab, ~StationID, group="IR2020")
+
+
+HabitatDT <- function(totHab){
+  totHab$CollDate<- format(totHab$CollDate, "%m-%d-%Y")
+    poor<-seq(0,20, 1)
+    poorclrs<-c('firebrick', 'firebrick','firebrick','firebrick','firebrick','firebrick', "#F0E442","#F0E442","#F0E442","#F0E442","#F0E442", 
+                "#009E73","#009E73","#009E73","#009E73","#009E73", "#0072B2","#0072B2","#0072B2","#0072B2","#0072B2")
+    if("POOLSUB" %in% unique(totHab$HabParameter) | 'POOLVAR' %in% unique(totHab$HabParameter)){ 
+      # Low Gradient Habitat Method
+
+      totHabData <- select(totHab,StationID,CollDate,TotalHabitat)[!duplicated(select(totHab,StationID,CollDate,TotalHabitat)),]# get unique sample dates
+      if(!"SUBSTRATE" %in% names(totHab$HabParameter)){
+        totHab$SUBSTRATE<-0 
+      }
+      habData1 <- select(totHab,-c(TotalHabitat, HabSampID, Comments, EnterDate,HSampIndex, CollTime,`Field Team`)) %>% # these two fields can cause multiple rows for each date in the spread() step, so get rid of them for now
+        filter(HabParameter %in% c("ALTER","BANKS","BANKVEG","FLOW","POOLSUB","POOLVAR","RIPVEG","SEDIMENT","SINUOSITY",
+                                   "SUBSTRATE","COVER")) %>% # get only low gradient parameters in case both happened to be sampled for site) and using filter is safer than select at a later step
+        spread(HabParameter,HabValue) %>%
+        filter(!is.na(POOLSUB) & !is.na(POOLVAR) & !is.na(SINUOSITY)) # if both methods used then get rid of sample dates not sampled as low gradient
+      
+      habData1<-habData1[ , c("StationID", "CollDate", "ALTER","BANKS","BANKVEG","FLOW","POOLSUB","POOLVAR","RIPVEG","SEDIMENT","SINUOSITY",
+                              "SUBSTRATE","COVER")]
+      # Deal with COVER terminology if present
+      if("COVER" %in% names(habData1)){
+        habData1 <- habData1 %>% rowwise()%>%
+          mutate(SUBSTRATE=sum(COVER,SUBSTRATE,na.rm=T)) %>% select(-c(COVER)) %>% # Get rid of old cover terminology
+          left_join(totHabData, by=c("StationID","CollDate")) %>%
+          dplyr::rename(TotalHabitat = TotalHabitat) %>%
+          arrange(CollDate)
+        habData1<-habData1[ , c("StationID", "CollDate", "ALTER","BANKS","BANKVEG","FLOW","POOLSUB","POOLVAR","RIPVEG","SEDIMENT","SINUOSITY",
+                                "SUBSTRATE","TotalHabitat")]
+      }else{
+        habData1 <- habData1 %>% rowwise()%>%
+          left_join(totHabData, by=c("StationID","CollDate")) %>%
+          dplyr::arrange(CollDate)
+        habData1<-habData1[ , c("StationID", "CollDate", "ALTER","BANKS","BANKVEG","FLOW","POOLSUB","POOLVAR","RIPVEG","SEDIMENT","SINUOSITY",
+                                "SUBSTRATE","TotalHabitat")]
+      }
+      DT::datatable(habData1,escape=F,rownames = F, class = 'cell-border stripe',
+ 
+                    colnames = c('Station ID','Date','Channel Alteration','Bank Stability','Bank Vegetation', 
+                                 'Flow', 'Pool Substrate','Pool Variability', 'Riparian Vegetation', 
+                                 'Sediment', 'Sinuosity', 'Substrate', 'Total Habitat'),
+                    options=list(pageLength=nrow(habData1),dom= 'Bt', scrollX=TRUE, 
+                                 initComplete = JS( 
+                                   "function(settings, json) {",
+                                   "$(this.api().table().header()).css({'background-color': '#636363', 'color': '#fff', 'font-size': '100%'});",
+                                   "}"))) %>%
+        formatStyle(columns= c(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15), fontSize = '100%') %>%
+        formatStyle(names(habData1)[3:12], textAlign = 'center', `font-family` = 'Arial') %>%
+        formatStyle(names(habData1)[3:12], backgroundColor = styleEqual(poor, poorclrs), alpha=1, textAlign = 'center', `font-family` = 'Arial') %>% 
+        formatStyle(names(habData1), fontWeight = styleInterval(10, c('bold','normal'))) %>% 
+        # Make table look like this:
+        #formatStyle(names(habData1)[3:12], backgroundColor = styleEqual(10, c('gray', 'yellow')), 
+        #            textAlign = 'center', `font-family` = 'Arial') %>%
+        formatStyle('TotalHabitat', backgroundColor = "lightgray")
+    }
+    
+
+      totHabData <- select(totHab,StationID,CollDate,TotalHabitat)[!duplicated(select(totHab,StationID,CollDate,TotalHabitat)),] # get unique sample dates
+      if(!"SUBSTRATE" %in% names(totHab)){
+        totHab$SUBSTRATE<-0 
+      }
+      habData1 <- select(totHab,-c(TotalHabitat,HabSampID,Comments, EnterDate,HSampIndex, CollTime,`Field Team`)) %>% # these two fields can cause multiple rows for each date in the spread() step, so get rid of them for now
+        filter(HabParameter %in% c('ALTER','BANKS','BANKVEG','COVER','EMBED','FLOW','RIFFLES','RIPVEG','SEDIMENT',
+                                   'SUBSTRATE','VELOCITY')) %>% # get only high gradient parameters in case both happened to be sampled for site) and using filter is safer than select at a later step
+        spread(HabParameter,HabValue) %>%
+        filter(!is.na(EMBED) & !is.na(RIFFLES) & !is.na(VELOCITY)) # if both methods used then get rid of sample dates not sampled as high gradient
+      
+      # Deal with COVER terminology if present
+      if("COVER" %in% names(habData1)){
+        habData1 <- habData1 %>% rowwise() %>%
+          mutate(SUBSTRATE=sum(COVER,SUBSTRATE,na.rm=T)) %>% select(-c(COVER)) %>% # Get rid of old cover terminology
+          left_join(totHabData, by=c("StationID","CollDate")) %>%
+          dplyr::arrange(CollDate)
+        habData1<-habData1[ , c("StationID", "CollDate", "ALTER","BANKS","BANKVEG", "EMBED", "FLOW","RIFFLES","RIPVEG","SEDIMENT","SUBSTRATE",
+                                "VELOCITY","TotalHabitat")]
+      }else{
+        habData1 <- habData1 %>% rowwise()%>%
+          left_join(totHabData, by=c("StationID","CollDate")) %>%
+          dplyr::arrange(CollDate)
+        habData1<-habData1[ , c("StationID", "CollDate", "ALTER","BANKS","BANKVEG", "EMBED", "FLOW","RIFFLES","RIPVEG","SEDIMENT","SUBSTRATE",
+                                "VELOCITY","TotalHabitat")]
+      }
+      DT::datatable(habData1,escape=F, rownames = F, class = 'cell-border stripe', colnames = c('Station ID','Date','Channel Alteration','Banks', 
+                                                                  'Bank Vegetation', 'Embeddedness', 
+                                                                  'Flow', 'Riffles', 'Riparian Vegetation', 
+                                                                  'Sediment', 'Substrate','Velocity', 'Total Habitat'),
+                    options=list(pageLength=nrow(habData1),dom= 'Bt', scrollX=TRUE,
+                                 initComplete = JS( 
+                                   "function(settings, json) {",
+                                   "$(this.api().table().header()).css({'background-color': '#636363', 'color': '#fff', 'font-size': '100%'});",
+                                   "}"))) %>%
+        formatStyle(columns = colnames(.), fontSize = '100%')%>%
+        formatStyle(names(habData1),  textAlign = 'center', `font-family` = 'Arial') %>%
+        formatStyle(names(habData1)[3:12],  backgroundColor = styleEqual(poor, poorclrs), alpha=0.1,
+                    textAlign = 'center', `font-family` = 'Arial') %>% 
+        formatStyle(names(habData1), fontWeight = styleInterval(10, c('bold','normal'))) %>% 
+        formatStyle('TotalHabitat', backgroundColor = "lightgray")
+  
+}
+
+Test <-function(totHab){
+  if (nrow(totHab)== 0){
+    print("No Habitat Data")
+    
+  }else{
+    HabitatDT(totHab)
+  }
+}
+
+#datatable(Test(shared_Hab))
+
+```
+
+
+
+```{r habitat plot }
+habitatplot<-function(totHabData) {
+  # force time on exact day of collection to fix POSIXct subtracting a day
+  # totHabData$CollDate <- as.POSIXct(paste(totHabData$CollDate,' 01:00:00', sep=''),format="%Y-%m-%d %H:%M:%S", tz="US/Eastern")
+  
+  # add min and max dates to make rectagle plotting easier, starting at 6 month buffer by can play with
+  #minDate <- 01/01/2013 
+  #maxDate <- 12/31/2018
+  # 
+  ggplot(totHabData, aes(x=CollDate , y=TotalHabitat))+
+
+    labs(x="Collection Year", y="Total Habitat")+
+    theme(axis.text=element_text(size=14, face="bold"), legend.text=element_text(size=14),
+          legend.title = element_text(size=14, face="bold"),
+          axis.title=element_text(size=14, face="bold")) +
+    scale_y_continuous(name="Total Habitat (unitless)", breaks=seq(0, 200, 25),limits=c(0,200)) +
+    scale_x_datetime(date_breaks='1 year', date_labels =  "%Y")+
+    theme(axis.text.x=element_text(angle=45,hjust=1))+
+    #annotate("rect", xmin=minDate, xmax=maxDate, ymin=150, ymax=Inf, alpha=1, fill="#0072B2") +
+    #annotate("rect",xmin=minDate, xmax=maxDate, ymin=130, ymax=150, alpha=1, fill="#009E73" ) +
+    #annotate("rect",xmin=minDate, xmax=maxDate, ymin=100, ymax=130, alpha=1, fill="#F0E442") +
+    #annotate("rect",xmin=minDate, xmax=maxDate, ymin=-Inf, ymax=100, alpha=1, fill="firebrick" )+
+    geom_bar(stat="identity")
+    
+}
+
+
+TestPlot <-function(totHab){
+  if (nrow(totHab)== 0){
+    print("No Habitat Data")
+    
+  }else{
+    habitatplot(totHab)
+  }
+}
+
+filter_select("StationID", "Station ID", shared_Hab, ~StationID)
+ggplotly(habitatplot(shared_Hab))
+
+
+```
+
+### Assessment Information
+
+**Regional Office:** &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; `r unique(shared_IR$Region)`
+
+**River Basin:** &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; `r unique(shared_VSCI$Basin)`
+
+**Stream Name:** &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`r unique(shared_VSCI$StreamName)`
+
+**Location Information:** &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`r unique(shared_VSCI$Location)`
+
+**Station ID:** &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`r unique(shared_IR$StationID)`
+
+**Collection Method:** &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`r unique(shared_VSCI$CollMeth)`
+
+**Assessment Method: ** &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`r unique(shared_IR$Assessment)`
+
+**Reviewer:** &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`r unique(shared_IR$Reviewer)`
+
+
+
+**Are there any seasonal differences noted?**
+
+`r unique(shared_IR$SeasonalDifferences)`
+
+
+
+**Summary of any comments associated with assessments**
+
+`r unique(shared_IR$SummaryAssessment)`
+
+
+**Any factors observed in watershed that may be affecting the benthic community?**
+
+`r unique(shared_IR$FactorsWatershed)`
+
+
+**Have there been any recent changes in activity in the watershed that may have affected the more recent bioassessments.  Are these changes likely to affect the benthic community for a short or long term basis?**
+
+`r unique(shared_IR$RecentChange)`
+
+
+
+**Final Assessment Rating:**
+`r unique(shared_IR$FinalAssessment)`
+
+

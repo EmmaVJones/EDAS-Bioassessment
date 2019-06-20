@@ -1,0 +1,122 @@
+---
+title: "Untitled"
+author: "Emma Jones"
+date: "6/18/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(flexdashboard)
+library(crosstalk)
+library(plotly)
+library(DT)
+```
+
+```{r plot in question}
+
+bugplot <- function(annualdata) {
+  
+  assessmentMethod <- if(length(unique(annualdata$method)) == 1){ # only do things if user chose an assessment method
+    # otherwise ggplot will try and plot 2+ methods for same data
+    unique(annualdata$method)
+  }
+  print(length(unique(annualdata$method)))
+  
+  # catch for no assessmentMethod chosen
+  #if(is.null(assessmentMethod)){return(unique(annualdata$method))}
+  
+   # VSCI plot
+  if(unique(annualdata$method) == 'VSCI'){
+    return(ggplot(annualdata, aes(x=CollDate, y=`Fam SCI`, fill=Season))+
+      geom_col()+
+      scale_fill_manual("Season", values = c("Fall" = "black", "Spring" = "dark grey"))+
+      labs(x="Collection Year", y="VSCI")+
+      theme(axis.text=element_text(size=14, face="bold"), legend.text=element_text(size=14),
+            legend.title = element_text(size=14, face="bold"),
+            axis.title=element_text(size=14, face="bold")) +
+      scale_y_continuous(name="VSCI", breaks=seq(0, 100, 10),limits=c(0,100))+
+      scale_x_datetime(date_breaks='1 year', date_labels =  "%Y")+
+      geom_hline(yintercept=60, color="red", size=1)+
+      theme(axis.text.x=element_text(angle=45,hjust=1)))
+  }
+  
+  
+  # VCPMI plots
+  if(unique(annualdata$method) == "VCPMI65" | unique(annualdata$method) == "VCPMI63"){ 
+    return(ggplot(annualdata, aes(x=CollDate, y=`Fam SCI`, fill=Season))+
+      geom_col()+
+      scale_fill_manual("Season", values = c("Fall" = "black", "Spring" = "dark grey"))+
+      labs(x="Collection Year", y="VCPMI")+
+      theme(axis.text=element_text(size=14, face="bold"), legend.text=element_text(size=14),
+            legend.title = element_text(size=14, face="bold"),
+            axis.title=element_text(size=14, face="bold")) +
+      scale_y_continuous(name="VCPMI", breaks=seq(0, 100, 10),limits=c(0,100))+
+      scale_x_datetime(date_breaks='1 year', date_labels =  "%Y")+
+      geom_hline(yintercept=40, color="red", size=1)+
+      theme(axis.text.x=element_text(angle=45,hjust=1)))
+  }
+ 
+  
+}
+
+```
+
+Get test dataset
+```{r read In Data}
+IR_SCI <- readRDS('IR_SCI_BRRO.RDS')
+```
+
+
+Test crosstalk filters
+```{r}
+# note all the levels available for method field
+unique(IR_SCI$method)
+
+# what the plot should look like:
+bugplot(filter(IR_SCI, StationID == '4AFRY006.08', method == 'VSCI'))
+
+shared_IR_SCI <- SharedData$new(IR_SCI)
+
+
+gg <- ggplot(shared_IR_SCI, aes(x=CollDate, y=`Fam SCI`, fill=Season))+
+      geom_col()+
+      scale_fill_manual("Season", values = c("Fall" = "black", "Spring" = "dark grey"))+
+      labs(x="Collection Year", y="VSCI")+
+      theme(axis.text=element_text(size=14, face="bold"), legend.text=element_text(size=14),
+            legend.title = element_text(size=14, face="bold"),
+            axis.title=element_text(size=14, face="bold")) +
+      scale_y_continuous(name="VSCI", breaks=seq(0, 100, 10),limits=c(0,100))+
+      scale_x_datetime(date_breaks='1 year', date_labels =  "%Y")+
+      geom_hline(yintercept=60, color="red", size=1)+
+      theme(axis.text.x=element_text(angle=45,hjust=1))
+
+
+
+bscols(
+  list(
+    filter_checkbox('CollectorID', "Collector ID", shared_IR_SCI, ~CollectorID, inline = TRUE),
+    filter_select("Basin", "Basin", shared_IR_SCI, ~Basin),
+    filter_select("StationID", "Station ID", shared_IR_SCI, ~StationID),
+    #filter_checkbox('method', 'Assessment Method', shared_IR_SCI, ~method), # need this line to filter one record per BenSampID
+    plot_ly(shared_IR_SCI, x = ~CollDate, y = ~`Fam SCI`, type = 'bar', color = ~Season,
+            hoverinfo="text", text=~paste(sep="<br>",
+                                      paste("StationID: ", StationID),
+                                      paste("Collection Date: ", CollDate),
+                                      paste("Collector ID: ",CollectorID),
+                                      paste("SCI Score: ", `Fam SCI`))) %>%
+      add_lines(x= ~ CollDate,y= ~ limit, mode='line',line = list(color = 'red'),
+                hoverinfo = "text", text="SCI Limit", name="SCI Limit") %>%
+      layout(showlegend=FALSE,
+             yaxis=list(title="SCI"),
+             xaxis=list(title="Sample Date",tickfont = list(size = 10))),
+    
+    
+    #ggplotly(bugplot(shared_IR_SCI$data(withSelection = TRUE))), # why won't this update based on selection???
+    #br(),br(),br(), # is there a line break option?
+    datatable(shared_IR_SCI) # this table does update and filter on 'method' selection
+  )
+)
+```
+

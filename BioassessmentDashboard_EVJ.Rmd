@@ -1,0 +1,298 @@
+---
+title: "Bioassessment Dashboard"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(flexdashboard)
+library(crosstalk)
+library(plotly)
+library(DT)
+library(htmltools)
+library(lubridate)
+library(summarywidget)
+library(sf)
+library(leaflet)
+
+```
+
+Sidebar {.sidebar}
+=====================================
+
+### Dataset Filters
+
+Choose a Collector ID, Basin, and StationID to plot data on subsequent tabs. Note you can see the table to the right update as you progressively filter the dataset. 
+```{r sidebar, echo=FALSE}
+IR_SCI <- readRDS('IR_SCI.RDS') 
+# SCI Table
+IR_SCI_Table <- select(IR_SCI, BenSampID:SCI, method, FamTotTaxa:`CPMI65-CHOWAN`) 
+IR_SCI_Table$CollDate <- as.Date(IR_SCI_Table$CollDate)
+# Habitat data for plotly
+IR_HAB <- select(IR_SCI, BenSampID, StationID, CollDate, CollectorID, Season, Year, HabSampID:TotalHabitat) %>%
+  mutate(minX = min(CollDate)- months(1), maxX = max(CollDate) + months(1), 
+         hab0 = 0, hab1 = 100, hab2 = 130, hab3 = 150, hab4= 200)
+# Habitat data for heatmap
+IR_HAB_heatmap <- select(IR_HAB, BenSampID, HabSampID, CollDate, EnterDate, Comments, ALTER:TotalHabitat) %>%
+  filter(!is.na(TotalHabitat))
+IR_HAB_heatmap$CollDate <- as.Date(IR_HAB_heatmap$CollDate)
+IR_HAB_heatmap$EnterDate <- as.Date(IR_HAB_heatmap$EnterDate)
+# SCI Raw
+IR_SCI_Raw <- IR_SCI %>%  
+  group_by(Year, RepNum) %>%
+  select(BenSampID,  RepNum, Year, Season, SCI) %>%
+  arrange(Year, Season)
+# Site data for mapview
+sites_sf <- distinct(IR_SCI, StationID, .keep_all = T) %>%
+  filter(!is.na(Lat) | !is.na(Long)) %>% # get rid of missing lat/long
+  select(BenSampID, StationID, Lat, Long, StreamName, Basin, Subecoregion,
+         Location, Region, EcoRegion, County) %>%# drop data to avoid any confusion
+  st_as_sf(coords = c("Long", "Lat"),  # make spatial layer using these columns
+           remove = T, # don't remove these lat/lon cols from df
+           crs = 4326)
+# IR decision
+IR_decision <- select(IR_SCI, BenSampID, StationID, IRYear:FinalAssessmentRating)
+
+
+shared_IR_SCI <- SharedData$new(IR_SCI, ~BenSampID, group = 'Choose Station' )
+shared_IR_HAB <- SharedData$new(IR_HAB, ~BenSampID, group = 'Choose Station' )
+shared_IR_HAB_heatmap <- SharedData$new(IR_HAB_heatmap, ~BenSampID, group = 'Choose Station' )
+shared_IR_SCI_Table <- SharedData$new(IR_SCI_Table, ~BenSampID, group = 'Choose Station' )
+shared_IR_SCI_Raw <- SharedData$new(IR_SCI_Raw, ~BenSampID, group = 'Choose Station' )
+shared_sites_sf <- SharedData$new(sites_sf, ~BenSampID, group = 'Choose Station' )
+shared_IR_decision <- SharedData$new(IR_decision, ~BenSampID, group = 'Choose Station' )
+
+bscols(
+  list(
+    filter_checkbox('CollectorID', "Collector ID", shared_IR_SCI, ~CollectorID, inline = TRUE),
+    filter_select("Basin", "Basin", shared_IR_SCI, ~Basin),
+    filter_select("StationID", "Station ID", shared_IR_SCI, ~StationID)
+  )
+)
+   
+```
+
+Notice anything weird with the Basin filter? That's because of all the errors in the database. If you can't easily find your data by basin, that means it needs to be fixed. When you are completing the IR2020 form it may be a good idea to fix your errors.
+
+
+
+
+SCI Scores
+=====================================  
+
+Column {data-width=200}
+-------------------------------------
+
+### SCI Plot
+
+```{r bio info tabset, echo=FALSE}
+plot_ly(shared_IR_SCI, x = ~CollDate, y = ~`SCI`, type = 'bar', 
+        color = ~Season, width = .10,
+        #marker = list(line = list(width = 1.5)),
+            hoverinfo="text", text=~paste(sep="<br>",
+                                      paste("StationID: ", StationID),
+                                      paste("Collection Date: ", CollDate),
+                                      paste("Collector ID: ",CollectorID),
+                                      paste("SCI Score: ", `Fam SCI`))) %>%
+      add_lines(x= ~ CollDate,y= ~ limit, mode='line',line = list(color = 'red'),
+                hoverinfo = "text", text="SCI Limit", name="SCI Limit") %>%
+      layout(#showlegend=FALSE,
+             yaxis=list(title="SCI"),
+             xaxis=list(title="Sample Date",tickfont = list(size = 10)))
+
+```
+
+### SCI Table
+
+```{r table, echo=FALSE}
+
+  #div( height="400px", background_color="gray")),
+  datatable(shared_IR_SCI_Table,extensions = 'Buttons',  rownames = FALSE,
+            options=list(dom= 'Bt', deferRender=TRUE, scrollY=250,scroller=TRUE, buttons=list('copy'))) # this table does update and filter on 'method' selection
+
+```
+
+
+
+Habitat Scores
+=====================================  
+
+Column {data-width=200}
+-------------------------------------
+
+### Total Habitat Plot
+
+```{r tothab plot, echo=FALSE}
+
+box1 <- data.frame(CollDate = c(min(IR_HAB$CollDate) - months(1), 
+                                  min(IR_HAB$CollDate) - months(1), 
+                                  max(IR_HAB$CollDate) + months(1),
+                                  max(IR_HAB$CollDate) + months(1)), 
+                   y = c(0, 100, 100, 0))
+box2 <- data.frame(CollDate = c(min(IR_HAB$CollDate) - months(1), 
+                                  min(IR_HAB$CollDate) - months(1), 
+                                  max(IR_HAB$CollDate) + months(1),
+                                  max(IR_HAB$CollDate) + months(1)), 
+                   y = c(100, 130, 130, 100))
+box3 <- data.frame(CollDate = c(min(IR_HAB$CollDate) - months(1), 
+                                  min(IR_HAB$CollDate) - months(1), 
+                                  max(IR_HAB$CollDate) + months(1),
+                                  max(IR_HAB$CollDate) + months(1)), 
+                   y = c(130, 150, 150, 130))
+box4 <- data.frame(CollDate = c(min(IR_HAB$CollDate) - months(1), 
+                                  min(IR_HAB$CollDate) - months(1), 
+                                  max(IR_HAB$CollDate) + months(1),
+                                  max(IR_HAB$CollDate) + months(1)), 
+                   y = c(150, 200, 200, 150)) 
+
+plot_ly(shared_IR_HAB) %>%
+  add_polygons(x = ~CollDate, y = ~y, data = box1, fillcolor = "firebrick",opacity=0.6, line = list(width = 0),
+                   hoverinfo="text", name =paste('High Probability of Stress to Aquatic Life')) %>%
+  add_polygons(data = box2, x = ~CollDate, y = ~y, fillcolor = "#F0E442",opacity=0.6, line = list(width = 0),
+                   hoverinfo="text", name =paste('Medium Probability of Stress to Aquatic Life')) %>%
+  add_polygons(data = box3, x = ~CollDate, y = ~y, fillcolor = "#009E73",opacity=0.6, line = list(width = 0),
+                   hoverinfo="text", name =paste('Low Probability of Stress to Aquatic Life')) %>%
+  add_polygons(data = box4, x = ~CollDate, y = ~y, fillcolor = "#0072B2",opacity=0.6, line = list(width = 0),
+                   hoverinfo="text", name =paste('No Probability of Stress to Aquatic Life')) %>%
+  add_lines(data = shared_IR_HAB, x = ~CollDate, y = ~hab1, line = list(color = "firebrick"),
+            hoverinfo="text", name ='High Probability of Stress to Aquatic Life',
+            text='High Probability of Stress to Aquatic Life') %>%
+  add_lines(data = shared_IR_HAB, x = ~CollDate, y = ~hab2, line = list(color = "#F0E442"),
+            hoverinfo="text", name ='Medium Probability of Stress to Aquatic Life',
+            text = 'Medium Probability of Stress to Aquatic Life') %>%
+  add_lines(data = shared_IR_HAB, x = ~CollDate, y = ~hab3, line = list(color = "#009E73"),
+            hoverinfo="text", name ='Low Probability of Stress to Aquatic Life',
+            text = 'Low Probability of Stress to Aquatic Life' ) %>%
+  add_lines(data = shared_IR_HAB, x = ~CollDate, y = ~hab4, line = list(color = "#0072B2"),
+            hoverinfo="text", name = 'No Probability of Stress to Aquatic Life',
+            text = 'No Probability of Stress to Aquatic Life') %>%
+  add_bars(data = shared_IR_HAB, x = ~CollDate, y = ~TotalHabitat, type = 'bar', color = ~Season,
+            hoverinfo="text", text=~paste(sep="<br>", width = .10,
+                                      paste("StationID: ", StationID),
+                                      paste("Collection Date: ", CollDate),
+                                      paste("Collector ID: ", CollectorID),
+                                      paste("Total Habitat Score: ", TotalHabitat))) %>%
+  layout(showlegend=FALSE,
+             yaxis=list(title="SCI"),
+             xaxis=list(title="Sample Date",tickfont = list(size = 10)))
+
+```
+
+
+
+### RBP Habitat Heatmap
+
+```{r total hab heatmap, echo = FALSE}
+# Set how many colors you will use and call them out by hex name
+brks <- 1:19
+clrs <- c("#8B0000", "#9D0000", "#AF0000", "#C10000", "#D40000", "#E60000", "#F80000", "#FF1415", "#FF3235", "#FF5055", "#FF6F75",
+          "#FF8D95", "#FFABB5", "#FFC3CD", "#FFCDD5", "#FFD7DE", "#FFE1E6", "#FFEBEE", "#FFF5F6", "#FFFFFF")
+
+datatable(shared_IR_HAB_heatmap, escape = F, rownames = F, extensions = 'Buttons',
+          colnames = c('BenSampID','HabSampID','Collection Date','Enter Date',
+                       'Comments','Channel Alteration','Banks', 
+                       'Bank Vegetation', 'Cover', 'Embeddedness', 'Flow', 
+                       'Pool Substrate', 'Pool Variability', 'Riffles',
+                       'Riparian Vegetation', 'Sediment',  'Sinuosity',
+                       'Substrate','Velocity', 'Total Habitat'),
+          options = list(dom='Bt', buttons=list('copy'))) %>%
+  formatStyle(c('ALTER', 'BANKS', 'BANKVEG', 'COVER', 'EMBED', 'FLOW', 'POOLSUB', 'POOLVAR', 
+      'RIFFLES', 'RIPVEG', 'SEDIMENT', 'SINUOSITY', 'SUBSTRATE', 'VELOCITY', 'TotalHabitat'),
+    backgroundColor = styleInterval(brks, clrs), 
+              textAlign = 'center', `font-family` = 'Arial') %>%
+  formatStyle(c('ALTER', 'BANKS', 'BANKVEG', 'COVER', 'EMBED', 'FLOW', 'POOLSUB', 'POOLVAR', 
+      'RIFFLES', 'RIPVEG', 'SEDIMENT', 'SINUOSITY', 'SUBSTRATE', 'VELOCITY', 'TotalHabitat'), 
+      fontWeight = styleInterval(10, c('bold','normal')), 
+              textAlign = 'center', `font-family` = 'Arial') %>%
+  formatStyle('TotalHabitat', backgroundColor = "lightgray")
+
+```
+
+
+
+Station Summary {data-orientation=rows}
+=====================================  
+
+Row
+-------------------------------------
+
+
+### Bio Stats
+
+```{r yearly Avg, echo=FALSE}
+filter_checkbox("year", "Choose Year(s) to Average (if none are selected all are used by default)", shared_IR_SCI, ~Year, inline = TRUE)
+span('Selected Year(s) Average SCI : ',
+     summarywidget(shared_IR_SCI, statistic='mean', column='SCI', #selection=~Year, 
+              digits=1))
+```
+
+<br>
+
+Selected Year(s) Fall Average SCI :
+```{r IR Fall Avg, echo=FALSE}
+summarywidget(shared_IR_SCI, statistic='mean', column='SCI', selection=~Season=='Fall', digits=1)
+```
+
+<br>
+
+Selected Year(s) Spring Average SCI :
+```{r IR Spring Avg, echo=FALSE}
+summarywidget(shared_IR_SCI, statistic='mean', column='SCI', selection=~Season=='Spring', digits=1)
+```
+
+### Bio Results
+
+```{r SCI Raw, echo=FALSE}
+datatable(shared_IR_SCI_Raw, extensions = 'Buttons',  rownames = FALSE, options = list(dom= 'Bt', buttons=list('copy')))
+```
+
+
+Row
+-------------------------------------
+
+
+### Site Map
+
+```{r site map, echo=FALSE}
+
+#mapview(shared_sites_sf, label= sites_sf$StationID) # mapview doesnt work with crosstalk, yet
+
+leaflet(shared_sites_sf) %>% 
+      addProviderTiles(providers$Esri.NatGeoWorldMap,group='Nat Geo World Map') %>%
+      addProviderTiles(providers$Esri.WorldImagery,group='Esri World Imagery') %>%
+      addProviderTiles(providers$OpenStreetMap,group='Open Street Map') %>%
+  addCircleMarkers(data=shared_sites_sf,color='yellow', fillColor='blue', radius = 5,
+                   fillOpacity = 0.5,opacity=1,weight = 2,stroke=T,group="sites",
+                   popup=~paste(sep='<br>',
+                                paste(strong('StationID : '), StationID),
+                                paste(strong('Location :'), Location),
+                                paste(strong('Stream Name : '), StreamName),
+                                paste(strong('Basin : '), Basin),
+                                paste(strong('DEQ Region : '), Region),
+                                paste(strong('County : '), County),
+                                paste(strong('Subecoregion : '), Subecoregion),
+                                paste(strong('EcoRegion : '), EcoRegion))) %>%
+  addLayersControl(baseGroups=c('Nat Geo World Map','Esri World Imagery','Open Street Map'),
+                       overlayGroups = c('sites'),
+                       options=layersControlOptions(collapsed=T),
+                       position='topleft')
+
+
+```
+
+
+
+Assessment Decision
+=====================================  
+
+Column {data-width=200}
+-------------------------------------
+
+```{r assessmentDecision, echo=FALSE}
+datatable(shared_IR_decision, extensions = 'Buttons',  rownames = FALSE, options = list(dom= 'Bt', buttons=list('copy')))
+```
+

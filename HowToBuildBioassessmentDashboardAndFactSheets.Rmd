@@ -1,0 +1,108 @@
+---
+title: "How to Build Bioassessment Dashboard and Fact Sheets"
+author: "Emma Jones"
+date: "6/17/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Run in R 3.5.2
+
+## Purpose
+
+This document walks users through the data organization and manipulation steps necessary to build the bioassessment dashboard and biologist fact sheets due for each integrated report cycle. Prior to running these scripts, the user will need to ensure that the necessary queries are update in EDAS. These queries limit the data to each integrated report cycle and invovle a manual removal of all non wadeable sites. Traditionally, Jason Hill (jason.hill@deq.virginia.gov) has built and run these queries in EDAS. 
+
+## Workflow
+
+After the queries are updated for each cycle and run, the user will use this script to organize all data necessary to build dashboard and fact sheets. Once the dashboard is distributed to the biologists, they will use the filtering capabilities to analyze their bug and habitat data and populate their assessment results in the appropriate EDAS form. The table associated with the EDAS form is used as an archive of all biologist comments from IR cycle to cycle and is used to build the biologist fact sheets with the **XXXXXXX.Rmd** file in this directory.
+
+### Step 1: Pull EDAS Queries into R
+
+Using the accessConnection_EVJ.R script, you will pull in the necessary tables and begin the manipulation process to combine the benthic data from three separate queries/tables into a single tibble for ease of use.
+
+```{r get data in}
+source('accessConnection_EVJ.R')
+```
+
+```{r combine Benthic Results}
+VSCI <- mutate(VSCI, method = 'VSCI', limit = 60, SCI = as.numeric(format(`Fam SCI`,digits = 3)))
+VCPMI63 <- mutate(VCPMI63, method = 'VCPMI63', limit = 40, SCI = as.numeric(format(`CPMI63+CHOWAN`,digits = 3)))
+VCPMI65 <- mutate(VCPMI65, method = 'VCPMI65', limit = 40, SCI = as.numeric(format(`CPMI65-CHOWAN`,digits = 3)))
+
+SCIquery <- bind_rows(VSCI, VCPMI63, VCPMI65) 
+```
+
+Next we need to join the collector info to the assessed data to be able to filter on StationID, CollectorID, and Basin from the JS widgets. And then get lat/long from Stationsquery for map.
+
+```{r}
+# first make sure none of the StationID's have multiple CollectorID's
+IR %>% group_by(StationID) %>% filter(duplicated(CollectorID))
+
+IR_SCI <- left_join(SCIquery, 
+                    dplyr::select(IR, -Basin), # remove Jason's basin determination to have only 1 Basin field (that the Biologist entered originally)
+                    by='StationID') %>%
+  dplyr::select(BenSampID, StationID, CollDate, StreamName, Basin, Subecoregion, 
+                CollMeth, Location , `Sample Season`, RepNum, SCI, everything()) %>%
+  left_join(select(Stationsquery, StationID, Lat, Long), by = 'StationID')
+#saveRDS(IR_SCI, 'IR_SCI.RDS')
+
+```
+
+Why are so many stations run for VSCI/VCPMI but are missing from the IR2020 table??
+
+```{r}
+missing <- filter(IR_SCI, is.na(AssessmentMethod))
+write.csv(missing, 'missingFromIR2020Table.csv', row.names = F)
+```
+
+
+
+ now get just the result we want based on Jason's hand work
+
+
+
+Get habitat data into a format that can be joined to the IR_SCI dataset so it can be filtered with SCI data.
+
+```{r habitat manipulation}
+hab <- spread(totalHabitat, HabParameter, HabValue) %>%
+  # fix a bunch of dumb shit people put in there
+  group_by(HabSampID) %>%
+  mutate(BANKS = ifelse(is.na(Banks), BANKS, Banks),
+         EMBED = ifelse(is.na(Embed), EMBED, Embed),
+         FLOW = ifelse(is.na(Flow), FLOW, Flow),
+         RIFFLES = ifelse(is.na(Riffles), RIFFLES, Riffles),
+         RIPVEG = ifelse(is.na(Ripveg), RIPVEG, Ripveg),
+         SUBSTRATE = sum(SUBSTRATE, suBSTRATE, Substrate, na.rm=T),
+         VELOCITY = ifelse(is.na(Velocity), VELOCITY, Velocity),
+         TotalHabitat = sum(ALTER, BANKS, BANKVEG, COVER, EMBED, FLOW, 
+                            POOLSUB, POOLVAR, RIFFLES, RIPVEG, SEDIMENT, 
+                            SINUOSITY, SUBSTRATE, VELOCITY, na.rm = T)) %>%
+  ungroup() %>%
+  select(-c(Banks, Embed, Flow, Riffles, Ripveg, suBSTRATE, Substrate, Velocity)) %>%
+  # filter things outside IR window
+  filter(CollDate > '2012-12-31 EDT' & CollDate < '2019-01-01 EDT') %>%
+  # make Total Habitat column
+  group_by(HabSampID)%>%
+  mutate(TotalHabitat = sum(ALTER, BANKS, BANKVEG, COVER, EMBED, FLOW, 
+                            POOLSUB, POOLVAR, RIFFLES, RIPVEG, SEDIMENT, 
+                            SINUOSITY, SUBSTRATE, VELOCITY, na.rm = T)) %>%
+  ungroup()
+  
+
+```
+
+Join to existing IR_SCI dataset
+
+```{r sci hab join}
+IR_SCI_HAB <- left_join(IR_SCI, hab, by = c('StationID', 'CollDate'))
+#saveRDS(IR_SCI_HAB, 'IR_SCI.RDS')
+
+# find dupes
+dupeHab <- (IR_SCI_HAB %>% group_by(StationID, CollDate) %>% filter(duplicated(BenSampID)))$BenSampID
+
+View(filter(IR_SCI_HAB, BenSampID %in% dupeHab))
+```
+
