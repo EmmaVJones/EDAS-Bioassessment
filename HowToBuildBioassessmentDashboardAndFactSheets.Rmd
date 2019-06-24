@@ -7,6 +7,12 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(RODBC)
+library(dplyr)
+library(DT)
+library(ggplot2)
+library(scales)
 ```
 
 ### Run in R 3.5.2
@@ -24,15 +30,32 @@ After the queries are updated for each cycle and run, the user will use this scr
 Using the accessConnection_EVJ.R script, you will pull in the necessary tables and begin the manipulation process to combine the benthic data from three separate queries/tables into a single tibble for ease of use.
 
 ```{r get data in}
-source('accessConnection_EVJ.R')
+source('accessQueryFunction64to32bit.R')
+access_query_32_EVJ(db_path = "data/EDASGenus.accdb", # where is your database located?
+                    db_table = "SCIQuery", # Name of table you want to query inside accesss database
+                    table_out = "SCIquery" # object name you want to save query results
+                    ) 
+access_query_32_EVJ(db_path = "data/EDASGenus.accdb", db_table = "Stations", table_out = "Stationsquery") 
+access_query_32_EVJ(db_path = "data/EDASGenus.accdb", db_table = "IR2020", table_out = "IR") 
+access_query_32_EVJ(db_path = "data/EDASGenus.accdb", db_table = "HabValues", table_out = "totalHab") 
+access_query_32_EVJ(db_path = "data/EDASGenus.accdb", db_table = "HabSamps", table_out = "totHabCon") 
+access_query_32_EVJ(db_path = "data/EDASGenus.accdb", db_table = "IR2020VSCIFinal", table_out = "VSCI") 
+access_query_32_EVJ(db_path = "data/EDASGenus.accdb", db_table = "IR2020VCPMI63Final", table_out = "VCPMI63") 
+access_query_32_EVJ(db_path = "data/EDASGenus.accdb", db_table = "IR2020VCPMI65FInal", table_out = "VCPMI65") 
+
+###############################################################################################################################################
+# Total hab mess around
+totalHabitat <- suppressWarnings(left_join(totalHab,totHabCon, by=c('HabSampID', 'Comments','EnterDate')))
+
 ```
 
 ```{r combine Benthic Results}
 VSCI <- mutate(VSCI, method = 'VSCI', limit = 60, SCI = as.numeric(format(`Fam SCI`,digits = 3)))
-VCPMI63 <- mutate(VCPMI63, method = 'VCPMI63', limit = 40, SCI = as.numeric(format(`CPMI63+CHOWAN`,digits = 3)))
-VCPMI65 <- mutate(VCPMI65, method = 'VCPMI65', limit = 40, SCI = as.numeric(format(`CPMI65-CHOWAN`,digits = 3)))
+VCPMI63 <- mutate(VCPMI63, method = 'VCPMI63', limit = 40, SCI = as.numeric(format(`VCPMI63`,digits = 3)))
+VCPMI65 <- mutate(VCPMI65, method = 'VCPMI65', limit = 40, SCI = as.numeric(format(`VCPMI65`,digits = 3)))
 
-SCIquery <- bind_rows(VSCI, VCPMI63, VCPMI65) 
+SCIquery <- bind_rows(VSCI, VCPMI63, VCPMI65) %>%
+  dplyr::select(-c(County,ID))
 ```
 
 Next we need to join the collector info to the assessed data to be able to filter on StationID, CollectorID, and Basin from the JS widgets. And then get lat/long from Stationsquery for map.
@@ -41,21 +64,29 @@ Next we need to join the collector info to the assessed data to be able to filte
 # first make sure none of the StationID's have multiple CollectorID's
 IR %>% group_by(StationID) %>% filter(duplicated(CollectorID))
 
-IR_SCI <- left_join(SCIquery, 
-                    dplyr::select(IR, -Basin), # remove Jason's basin determination to have only 1 Basin field (that the Biologist entered originally)
-                    by='StationID') %>%
-  dplyr::select(BenSampID, StationID, CollDate, StreamName, Basin, Subecoregion, 
-                CollMeth, Location , `Sample Season`, RepNum, SCI, everything()) %>%
-  left_join(select(Stationsquery, StationID, Lat, Long), by = 'StationID')
+# method using real basin inputs that biologists responsible for
+#IR_SCI <- left_join(SCIquery, 
+#                    dplyr::select(IR, -Basin), # remove Jason's basin determination to have only 1 Basin field (that the Biologist entered originally)
+#                    by='StationID') %>%
+#  dplyr::select(BenSampID:RepNum, SCI, everything()) %>%
+#  left_join(select(Stationsquery, StationID, Lat, Long), by = 'StationID')
 #saveRDS(IR_SCI, 'IR_SCI.RDS')
+
+# being nicer about basin mess ups
+IR_SCI <- left_join(dplyr::select(SCIquery, -Basin), # remove messed up basin field that biologists entered to have only 1 Basin field
+                    IR, 
+                    by='StationID') %>%
+  dplyr::select(BenSampID:RepNum, SCI, everything()) %>%
+  left_join(select(Stationsquery, StationID, Lat, Long), by = 'StationID')
+#saveRDS(IR_SCI, 'IR_SCI2.RDS')
 
 ```
 
 Why are so many stations run for VSCI/VCPMI but are missing from the IR2020 table??
 
 ```{r}
-missing <- filter(IR_SCI, is.na(AssessmentMethod))
-write.csv(missing, 'missingFromIR2020Table.csv', row.names = F)
+missing <- filter(IR_SCI, is.na(AssessmentMethod)) # looks good now
+#write.csv(missing, 'missingFromIR2020Table.csv', row.names = F)
 ```
 
 
@@ -98,11 +129,53 @@ Join to existing IR_SCI dataset
 
 ```{r sci hab join}
 IR_SCI_HAB <- left_join(IR_SCI, hab, by = c('StationID', 'CollDate'))
-#saveRDS(IR_SCI_HAB, 'IR_SCI.RDS')
+saveRDS(IR_SCI_HAB, 'IR_SCI2.RDS')
 
 # find dupes
 dupeHab <- (IR_SCI_HAB %>% group_by(StationID, CollDate) %>% filter(duplicated(BenSampID)))$BenSampID
 
 View(filter(IR_SCI_HAB, BenSampID %in% dupeHab))
+
+#write.csv(filter(IR_SCI_HAB, BenSampID %in% dupeHab), 'duplicatedHabitatData.csv', row.names = F)
 ```
+
+
+
+
+## Try to  get 2 yr SCI averages and attach to each BenSampID 
+
+
+```{r}
+IR_SCI_HAB2 <- IR_SCI_HAB %>%
+  group_by(StationID) %>%
+  mutate(`6 Year Average` = as.numeric(format(mean(SCI, na.rm = T), digits = 3)),
+         `6 Year n Samples` = n()) %>%
+  filter(CollDate > '2015-12-31') %>%
+  mutate(`2 Year Average` = as.numeric(format(mean(SCI, na.rm = T), digits = 3)),
+         `2 Year n Samples` = n())  %>%
+  ungroup() %>%
+  select(BenSampID, RepNum, StationID,`6 Year Average`,`6 Year n Samples`,`2 Year Average`,`2 Year n Samples`)
+
+#saveRDS(IR_SCI_HAB2, 'IR_SCI3.RDS')
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

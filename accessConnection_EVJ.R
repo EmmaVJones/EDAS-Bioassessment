@@ -22,9 +22,9 @@ access_query_32_EVJ(db_path = "data/EDASGenus.accdb", db_table = "Stations", tab
 access_query_32_EVJ(db_path = "data/EDASGenus.accdb", db_table = "IR2020", table_out = "IR") 
 access_query_32_EVJ(db_path = "data/EDASGenus.accdb", db_table = "HabValues", table_out = "totalHab") 
 access_query_32_EVJ(db_path = "data/EDASGenus.accdb", db_table = "HabSamps", table_out = "totHabCon") 
-access_query_32_EVJ(db_path = "data/EDASGenus.accdb", db_table = "VSCIIR2020", table_out = "VSCI") 
-access_query_32_EVJ(db_path = "data/EDASGenus.accdb", db_table = "VCPMI63plusChowanIR2020", table_out = "VCPMI63") 
-access_query_32_EVJ(db_path = "data/EDASGenus.accdb", db_table = "VCPMI65minusChowanIR2020", table_out = "VCPMI65") 
+access_query_32_EVJ(db_path = "data/EDASGenus.accdb", db_table = "IR2020VSCIFinal", table_out = "VSCI") 
+access_query_32_EVJ(db_path = "data/EDASGenus.accdb", db_table = "IR2020VCPMI63Final", table_out = "VCPMI63") 
+access_query_32_EVJ(db_path = "data/EDASGenus.accdb", db_table = "IR2020VCPMI65Final", table_out = "VCPMI65") 
 
 ###############################################################################################################################################
 # Total hab mess around

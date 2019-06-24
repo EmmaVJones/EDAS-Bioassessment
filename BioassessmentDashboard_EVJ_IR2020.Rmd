@@ -30,7 +30,8 @@ Sidebar {.sidebar}
 
 Choose a Collector ID, Basin, and StationID to plot data on subsequent tabs. Note you can see the table to the right update as you progressively filter the dataset. 
 ```{r sidebar, echo=FALSE}
-IR_SCI <- readRDS('IR_SCI.RDS') 
+IR_SCI <- readRDS('IR_SCI2.RDS')
+IR_SCI_HAB2 <- readRDS('IR_SCI3.RDS')
 # SCI Table
 IR_SCI_Table <- select(IR_SCI, BenSampID:SCI, method, FamTotTaxa:VCPMI65) 
 IR_SCI_Table$CollDate <- as.Date(IR_SCI_Table$CollDate)
@@ -67,12 +68,16 @@ shared_IR_SCI_Table <- SharedData$new(IR_SCI_Table, ~BenSampID, group = 'Choose 
 shared_IR_SCI_Raw <- SharedData$new(IR_SCI_Raw, ~BenSampID, group = 'Choose Station' )
 shared_sites_sf <- SharedData$new(sites_sf, ~BenSampID, group = 'Choose Station' )
 shared_IR_decision <- SharedData$new(IR_decision, ~BenSampID, group = 'Choose Station' )
+shared_IR_SCI_HAB2 <- SharedData$new(IR_SCI_HAB2, ~BenSampID, group = 'Choose Station' )
+
 
 bscols(
   list(
     filter_checkbox('CollectorID', "Collector ID", shared_IR_SCI, ~CollectorID, inline = TRUE),
     filter_select("Basin", "Basin", shared_IR_SCI, ~Basin),
-    filter_select("StationID", "Station ID", shared_IR_SCI, ~StationID)
+    filter_select("StationID", "Station ID", shared_IR_SCI, ~StationID),
+    filter_checkbox('RepNum', "Replicate Numbers to Include in Calculations (if none are selected then all are included)", shared_IR_SCI, ~RepNum, inline = TRUE)
+
   )
 )
    
@@ -219,11 +224,29 @@ datatable(shared_IR_HAB_heatmap, escape = F, rownames = F, extensions = 'Buttons
 Station Summary {data-orientation=rows}
 =====================================  
 
+Row {data-height=325}
+-------------------------------------
+
+
+### Bio Default Stats
+
+```{r default stats, echo=FALSE}
+
+span(strong('Note: Averages inlcude ALL replicate samples.'), 'If you wish to not include replicates in an average, you will need to use the Bio Interactive Stats feature or calculate by hand.')
+
+datatable(shared_IR_SCI_HAB2, extensions = 'Buttons',  rownames = FALSE, 
+          options = list(dom= 'Bt', buttons=list('copy'),
+                         pageLength = 1,
+                         columnDefs = list(list(visible=FALSE, targets=c(0,1))))) # hide BenSampID column, note DT is JavaScript library and JS starts counting at 0 so colnumber needs to be 0 to work
+```
+
+
+
 Row
 -------------------------------------
 
 
-### Bio Stats
+### Bio Interactive Stats
 
 ```{r yearly Avg, echo=FALSE}
 filter_checkbox("year", "Choose Year(s) to Average (if none are selected all are used by default)", shared_IR_SCI, ~Year, inline = TRUE)
@@ -246,7 +269,8 @@ Selected Year(s) Spring Average SCI :
 summarywidget(shared_IR_SCI, statistic='mean', column='SCI', selection=~Season=='Spring', digits=1)
 ```
 
-### Bio Results
+
+### Bio Interactive Results
 
 ```{r SCI Raw, echo=FALSE}
 datatable(shared_IR_SCI_Raw, extensions = 'Buttons',  rownames = FALSE, options = list(dom= 'Bt', buttons=list('copy')))
@@ -309,6 +333,5 @@ datatable(shared_IR_decision, extensions = 'Buttons',  rownames = FALSE, width="
                                          list(extend = 'collection',
                                               buttons = c('csv', 'excel', 'pdf'),
                                               text = 'Download' ))))
-                          #buttons=list('copy')))
 ```
 
