@@ -83,8 +83,6 @@ bscols(
    
 ```
 
-Notice anything weird with the Basin filter? That's because of all the errors in the database. If you can't easily find your data by basin, that means it needs to be fixed. When you are completing the IR2020 form it may be a good idea to fix your errors.
-
 
 
 
