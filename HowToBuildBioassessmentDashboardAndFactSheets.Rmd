@@ -150,10 +150,14 @@ IR_SCI_HAB2 <- IR_SCI_HAB %>%
   group_by(StationID) %>%
   mutate(`6 Year Average` = as.numeric(format(mean(SCI, na.rm = T), digits = 3)),
          `6 Year n Samples` = n()) %>%
+  ungroup()
+IR_SCI_HAB2.1 <- IR_SCI_HAB2 %>%
   filter(CollDate > '2015-12-31') %>%
+  group_by(StationID) %>%
   mutate(`2 Year Average` = as.numeric(format(mean(SCI, na.rm = T), digits = 3)),
          `2 Year n Samples` = n())  %>%
-  ungroup() %>%
+  ungroup() 
+IR_SCI_HAB2 <- left_join(IR_SCI_HAB2, IR_SCI_HAB2.1, by= c('BenSampID', 'RepNum', 'StationID','6 Year Average','6 Year n Samples')) %>%
   select(BenSampID, RepNum, StationID,`6 Year Average`,`6 Year n Samples`,`2 Year Average`,`2 Year n Samples`)
 
 #saveRDS(IR_SCI_HAB2, 'IR_SCI3.RDS')

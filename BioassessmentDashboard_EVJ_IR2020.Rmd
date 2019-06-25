@@ -37,11 +37,11 @@ IR_SCI_Table <- select(IR_SCI, BenSampID:SCI, method, FamTotTaxa:VCPMI65)
 IR_SCI_Table$CollDate <- as.Date(IR_SCI_Table$CollDate)
 # Habitat data for plotly
 IR_HAB <- select(IR_SCI, BenSampID, StationID, CollDate, CollectorID, Season, Year, HabSampID:TotalHabitat) %>%
+  filter(!is.na(TotalHabitat)) %>%
   mutate(minX = min(CollDate)- months(1), maxX = max(CollDate) + months(1), 
-         hab0 = 0, hab1 = 100, hab2 = 130, hab3 = 150, hab4= 200)
+         hab1 = 100, hab2 = 130, hab3 = 150, hab4= 200)
 # Habitat data for heatmap
-IR_HAB_heatmap <- select(IR_HAB, BenSampID, HabSampID, CollDate, EnterDate, Comments, ALTER:TotalHabitat) %>%
-  filter(!is.na(TotalHabitat))
+IR_HAB_heatmap <- select(IR_HAB, BenSampID, HabSampID, CollDate, EnterDate, Comments, ALTER:TotalHabitat) 
 IR_HAB_heatmap$CollDate <- as.Date(IR_HAB_heatmap$CollDate)
 IR_HAB_heatmap$EnterDate <- as.Date(IR_HAB_heatmap$EnterDate)
 # SCI Raw
@@ -107,7 +107,8 @@ plot_ly(shared_IR_SCI, x = ~CollDate, y = ~`SCI`, type = 'bar',
                 hoverinfo = "text", text="SCI Limit", name="SCI Limit") %>%
       layout(#showlegend=FALSE,
              yaxis=list(title="SCI"),
-             xaxis=list(title="Sample Date",tickfont = list(size = 10)))
+             xaxis=list(title="Sample Date",tickfont = list(size = 10),
+                        type = 'date',tickformat = "%Y"))
 
 ```
 
@@ -115,9 +116,10 @@ plot_ly(shared_IR_SCI, x = ~CollDate, y = ~`SCI`, type = 'bar',
 
 ```{r table, echo=FALSE}
 
-  #div( height="400px", background_color="gray")),
   datatable(shared_IR_SCI_Table,extensions = 'Buttons',  rownames = FALSE,
-            options=list(dom= 'Bt', deferRender=TRUE, scrollY=250,scroller=TRUE, buttons=list('copy'))) # this table does update and filter on 'method' selection
+            options=list(dom= 'Bt', deferRender=TRUE, scrollY=250,scroller=TRUE, 
+                         buttons=list('copy','colvis'))) %>% # this table does update and filter on 'method' selection
+  DT::formatStyle(columns = c(1:73), fontSize = '75%')
 
 ```
 
@@ -133,39 +135,10 @@ Column {data-width=200}
 
 ```{r tothab plot, echo=FALSE}
 
-box1 <- data.frame(CollDate = c(min(IR_HAB$CollDate) - months(1), 
-                                  min(IR_HAB$CollDate) - months(1), 
-                                  max(IR_HAB$CollDate) + months(1),
-                                  max(IR_HAB$CollDate) + months(1)), 
-                   y = c(0, 100, 100, 0))
-box2 <- data.frame(CollDate = c(min(IR_HAB$CollDate) - months(1), 
-                                  min(IR_HAB$CollDate) - months(1), 
-                                  max(IR_HAB$CollDate) + months(1),
-                                  max(IR_HAB$CollDate) + months(1)), 
-                   y = c(100, 130, 130, 100))
-box3 <- data.frame(CollDate = c(min(IR_HAB$CollDate) - months(1), 
-                                  min(IR_HAB$CollDate) - months(1), 
-                                  max(IR_HAB$CollDate) + months(1),
-                                  max(IR_HAB$CollDate) + months(1)), 
-                   y = c(130, 150, 150, 130))
-box4 <- data.frame(CollDate = c(min(IR_HAB$CollDate) - months(1), 
-                                  min(IR_HAB$CollDate) - months(1), 
-                                  max(IR_HAB$CollDate) + months(1),
-                                  max(IR_HAB$CollDate) + months(1)), 
-                   y = c(150, 200, 200, 150)) 
-
 plot_ly(shared_IR_HAB) %>%
-  add_polygons(x = ~CollDate, y = ~y, data = box1, fillcolor = "firebrick",opacity=0.6, line = list(width = 0),
-                   hoverinfo="text", name =paste('High Probability of Stress to Aquatic Life')) %>%
-  add_polygons(data = box2, x = ~CollDate, y = ~y, fillcolor = "#F0E442",opacity=0.6, line = list(width = 0),
-                   hoverinfo="text", name =paste('Medium Probability of Stress to Aquatic Life')) %>%
-  add_polygons(data = box3, x = ~CollDate, y = ~y, fillcolor = "#009E73",opacity=0.6, line = list(width = 0),
-                   hoverinfo="text", name =paste('Low Probability of Stress to Aquatic Life')) %>%
-  add_polygons(data = box4, x = ~CollDate, y = ~y, fillcolor = "#0072B2",opacity=0.6, line = list(width = 0),
-                   hoverinfo="text", name =paste('No Probability of Stress to Aquatic Life')) %>%
   add_lines(data = shared_IR_HAB, x = ~CollDate, y = ~hab1, line = list(color = "firebrick"),
-            hoverinfo="text", name ='High Probability of Stress to Aquatic Life',
-            text='High Probability of Stress to Aquatic Life') %>%
+          hoverinfo="text", name ='High Probability of Stress to Aquatic Life',
+          text='High Probability of Stress to Aquatic Life') %>%
   add_lines(data = shared_IR_HAB, x = ~CollDate, y = ~hab2, line = list(color = "#F0E442"),
             hoverinfo="text", name ='Medium Probability of Stress to Aquatic Life',
             text = 'Medium Probability of Stress to Aquatic Life') %>%
@@ -175,15 +148,17 @@ plot_ly(shared_IR_HAB) %>%
   add_lines(data = shared_IR_HAB, x = ~CollDate, y = ~hab4, line = list(color = "#0072B2"),
             hoverinfo="text", name = 'No Probability of Stress to Aquatic Life',
             text = 'No Probability of Stress to Aquatic Life') %>%
-  add_bars(data = shared_IR_HAB, x = ~CollDate, y = ~TotalHabitat, type = 'bar', color = ~Season,
-            hoverinfo="text", text=~paste(sep="<br>", width = .10,
+   add_bars(data = shared_IR_HAB, x = ~CollDate, y = ~TotalHabitat, type = 'bar',
+           color = ~Season, 
+            hoverinfo="text", text=~paste(sep="<br>",
                                       paste("StationID: ", StationID),
                                       paste("Collection Date: ", CollDate),
                                       paste("Collector ID: ", CollectorID),
                                       paste("Total Habitat Score: ", TotalHabitat))) %>%
-  layout(showlegend=FALSE,
+  layout(#showlegend=FALSE,
              yaxis=list(title="SCI"),
-             xaxis=list(title="Sample Date",tickfont = list(size = 10)))
+             xaxis=list(title="Sample Date" ,tickfont = list(size = 10),
+                        type = 'date',tickformat = "%Y"))
 
 ```
 
@@ -204,7 +179,7 @@ datatable(shared_IR_HAB_heatmap, escape = F, rownames = F, extensions = 'Buttons
                        'Pool Substrate', 'Pool Variability', 'Riffles',
                        'Riparian Vegetation', 'Sediment',  'Sinuosity',
                        'Substrate','Velocity', 'Total Habitat'),
-          options = list(dom='Bt', buttons=list('copy'))) %>%
+          options = list(dom='Bt', buttons=list('copy','colvis'))) %>%
   formatStyle(c('ALTER', 'BANKS', 'BANKVEG', 'COVER', 'EMBED', 'FLOW', 'POOLSUB', 'POOLVAR', 
       'RIFFLES', 'RIPVEG', 'SEDIMENT', 'SINUOSITY', 'SUBSTRATE', 'VELOCITY', 'TotalHabitat'),
     backgroundColor = styleInterval(brks, clrs), 
@@ -233,7 +208,7 @@ Row {data-height=325}
 span(strong('Note: Averages inlcude ALL replicate samples.'), 'If you wish to not include replicates in an average, you will need to use the Bio Interactive Stats feature or calculate by hand.')
 
 datatable(shared_IR_SCI_HAB2, extensions = 'Buttons',  rownames = FALSE, 
-          options = list(dom= 'Bt', buttons=list('copy'),
+          options = list(dom= 'Bt', buttons=list('copy','colvis'),
                          pageLength = 1,
                          columnDefs = list(list(visible=FALSE, targets=c(0,1))))) # hide BenSampID column, note DT is JavaScript library and JS starts counting at 0 so colnumber needs to be 0 to work
 ```
@@ -271,7 +246,7 @@ summarywidget(shared_IR_SCI, statistic='mean', column='SCI', selection=~Season==
 ### Bio Interactive Results
 
 ```{r SCI Raw, echo=FALSE}
-datatable(shared_IR_SCI_Raw, extensions = 'Buttons',  rownames = FALSE, options = list(dom= 'Bt', buttons=list('copy')))
+datatable(shared_IR_SCI_Raw, extensions = 'Buttons',  rownames = FALSE, options = list(dom= 'Bt', buttons=list('copy','colvis')))
 ```
 
 
@@ -327,7 +302,7 @@ datatable(shared_IR_decision, extensions = 'Buttons',  rownames = FALSE, width="
                            pageLength = 15,
                            lengthMenu = c(5, 10, 15, 20),
                           dom= 'Bftlir', 
-                          buttons = list('copy', 'print', 
+                          buttons = list('copy', 'colvis',
                                          list(extend = 'collection',
                                               buttons = c('csv', 'excel', 'pdf'),
                                               text = 'Download' ))))
