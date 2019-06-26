@@ -45,8 +45,21 @@ access_query_32_EVJ(db_path = "data/EDASGenus.accdb", db_table = "IR2020VCPMI65F
 
 ###############################################################################################################################################
 # Total hab mess around
-totalHabitat <- suppressWarnings(left_join(totalHab,totHabCon, by=c('HabSampID', 'Comments','EnterDate')))
+# get individual habitat paramter comments concatinated per HabSampID for easier joining
+totalHab1 <- mutate(totalHab, catComment = ifelse(is.na(Comments), NA, as.character(paste(HabParameter, Comments, sep = ' : ')))) %>%
+  as.tibble()
+totalHab2 <- filter(totalHab1, !is.na(catComment)) %>%
+  group_by(HabSampID) %>%
+  dplyr::summarise(catCommentSample = paste(catComment, collapse = '; '))
+totalHab3 <- left_join(totalHab1, totalHab2, by= 'HabSampID') %>%
+  select(-c(Comments,catComment))
+  
 
+totalHabitat <- suppressWarnings(left_join(totalHab3,totHabCon, by=c('HabSampID', 'EnterDate'))) %>%
+  mutate(finalComments = paste('Sample Comments: ', Comments,
+                               'HabParameter Comments: ', catCommentSample)) %>%
+  select(-c(Comments,catCommentSample)) %>%
+  rename('Comments' = 'finalComments')
 ```
 
 ```{r combine Benthic Results}
@@ -129,7 +142,7 @@ Join to existing IR_SCI dataset
 
 ```{r sci hab join}
 IR_SCI_HAB <- left_join(IR_SCI, hab, by = c('StationID', 'CollDate'))
-saveRDS(IR_SCI_HAB, 'IR_SCI2.RDS')
+#saveRDS(IR_SCI_HAB, 'IR_SCI2.RDS')
 
 # find dupes
 dupeHab <- (IR_SCI_HAB %>% group_by(StationID, CollDate) %>% filter(duplicated(BenSampID)))$BenSampID

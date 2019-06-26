@@ -1,0 +1,129 @@
+---
+title: "Bioassessment Dashboard"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+    source_code: embed
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(flexdashboard)
+library(crosstalk)
+library(plotly)
+library(DT)
+library(htmltools)
+library(lubridate)
+library(summarywidget)
+library(sf)
+library(leaflet)
+library(inlmisc)
+
+```
+
+Sidebar {.sidebar}
+=====================================
+
+### Dataset Filters
+
+Choose a Collector ID, Basin, and StationID to plot data on subsequent tabs. Note you can see the table to the right update as you progressively filter the dataset. 
+```{r sidebar, echo=FALSE}
+IR_SCI <- readRDS('IR_SCI2.RDS')
+IR_SCI_HAB2 <- readRDS('IR_SCI3.RDS')
+# SCI Table
+IR_SCI_Table <- select(IR_SCI, BenSampID:SCI, method, FamTotTaxa:VCPMI65) 
+IR_SCI_Table$CollDate <- as.Date(IR_SCI_Table$CollDate)
+# Habitat data for plotly
+IR_HAB <- select(IR_SCI, BenSampID, StationID, CollDate, CollectorID, Season, Year, HabSampID:TotalHabitat) %>%
+  filter(!is.na(TotalHabitat)) %>%
+  mutate(minX = min(CollDate)- months(1), maxX = max(CollDate) + months(1), 
+         hab1 = 100, hab2 = 130, hab3 = 150, hab4= 200)
+# Habitat data for heatmap
+IR_HAB_heatmap <- select(IR_HAB, BenSampID, HabSampID, CollDate, EnterDate, Comments, ALTER:TotalHabitat) 
+IR_HAB_heatmap$CollDate <- as.Date(IR_HAB_heatmap$CollDate)
+IR_HAB_heatmap$EnterDate <- as.Date(IR_HAB_heatmap$EnterDate)
+# SCI Raw
+IR_SCI_Raw <- IR_SCI %>%  
+  group_by(Year, RepNum) %>%
+  select(BenSampID,  RepNum, Year, Season, SCI) %>%
+  arrange(Year, Season)
+# Site data for mapview
+sites_sf <- distinct(IR_SCI, StationID, .keep_all = T) %>%
+  filter(!is.na(Lat) | !is.na(Long)) %>% # get rid of missing lat/long
+  select(BenSampID, StationID, Lat, Long, StreamName, Basin,
+         Location, Region, EcoRegion, EcoregionCode, County) %>%# drop data to avoid any confusion
+  st_as_sf(coords = c("Long", "Lat"),  # make spatial layer using these columns
+           remove = T, # don't remove these lat/lon cols from df
+           crs = 4326)
+# IR decision
+IR_decision <- select(IR_SCI, BenSampID, StationID, IRYear:FinalAssessmentRating)
+
+
+shared_IR_SCI <- SharedData$new(IR_SCI, ~BenSampID, group = 'Choose Station' )
+shared_IR_HAB <- SharedData$new(IR_HAB, ~BenSampID, group = 'Choose Station' )
+shared_IR_HAB_heatmap <- SharedData$new(IR_HAB_heatmap, ~BenSampID, group = 'Choose Station' )
+shared_IR_SCI_Table <- SharedData$new(IR_SCI_Table, ~BenSampID, group = 'Choose Station' )
+shared_IR_SCI_Raw <- SharedData$new(IR_SCI_Raw, ~BenSampID, group = 'Choose Station' )
+shared_sites_sf <- SharedData$new(sites_sf, ~BenSampID, group = 'Choose Station' )
+shared_IR_decision <- SharedData$new(IR_decision, ~BenSampID, group = 'Choose Station' )
+shared_IR_SCI_HAB2 <- SharedData$new(IR_SCI_HAB2, ~BenSampID, group = 'Choose Station' )
+shared_sites <- SharedData$new(
+  distinct(IR_SCI, StationID, .keep_all = T) %>%
+  filter(!is.na(Lat) | !is.na(Long)) %>% # get rid of missing lat/long
+  select(BenSampID, StationID, Lat, Long, StreamName, Basin,
+         Location, Region, EcoRegion, EcoregionCode, County), ~BenSampID, group = 'Choose Station' )
+
+bscols(
+  list(
+    filter_checkbox('CollectorID', "Collector ID", shared_IR_SCI, ~CollectorID, inline = TRUE),
+    filter_select("Basin", "Basin", shared_IR_SCI, ~Basin),
+    filter_select("StationID", "Station ID", shared_IR_SCI, ~StationID),
+    filter_checkbox('RepNum', "Replicate Numbers to Include in Calculations (if none are selected then all are included)", shared_IR_SCI, ~RepNum, inline = TRUE)
+
+  )
+)
+   
+```
+
+Map {data-icon="fa-globe"}
+=====================================  
+
+Column {data-width=200}
+-------------------------------------
+
+
+### Site Map
+
+```{r site map, echo=FALSE}
+
+#mapview(shared_sites_sf, label= sites_sf$StationID) # mapview doesnt work with crosstalk, yet
+
+#CreateWebMap(maps = c("Topo","Imagery","Hydrography"), collapsed = TRUE) %>%
+leaflet(shared_sites) %>%
+  setView(-78, 37.5, zoom=6) %>%
+  #addCircleMarkers(data=shared_sites_sf,color='yellow', fillColor='blue', radius = 5,
+    addCircleMarkers(data=shared_sites,color='yellow', fillColor='blue', radius = 5,
+                   fillOpacity = 0.5,opacity=1,weight = 2,stroke=T,group="sites",
+                   label = ~StationID,
+                   popup=~paste(sep='<br>',
+                                paste(strong('StationID : '), StationID),
+                                paste(strong('Location :'), Location),
+                                paste(strong('Stream Name : '), StreamName),
+                                paste(strong('Basin : '), Basin),
+                                paste(strong('DEQ Region : '), Region),
+                                paste(strong('County : '), County),
+                                paste(strong('Ecoregion Code : '), EcoregionCode),
+                                paste(strong('EcoRegion : '), EcoRegion))) %>%
+  inlmisc::AddHomeButton(raster::extent(-83.89, -74.80, 36.54, 39.98), position = "topleft") %>%
+  inlmisc::AddSearchButton(group = "sites", zoom = 15,propertyName = "label",
+                           textPlaceholder = "Search stations") %>%
+  addLayersControl(baseGroups=c("Topo","Imagery","Hydrography"),
+                       overlayGroups = c('sites'),
+                       options=layersControlOptions(collapsed=T),
+                       position='topleft')
+  
+
+
+```

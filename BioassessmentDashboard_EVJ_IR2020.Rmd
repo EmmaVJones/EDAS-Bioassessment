@@ -70,7 +70,6 @@ shared_sites_sf <- SharedData$new(sites_sf, ~BenSampID, group = 'Choose Station'
 shared_IR_decision <- SharedData$new(IR_decision, ~BenSampID, group = 'Choose Station' )
 shared_IR_SCI_HAB2 <- SharedData$new(IR_SCI_HAB2, ~BenSampID, group = 'Choose Station' )
 
-
 bscols(
   list(
     filter_checkbox('CollectorID', "Collector ID", shared_IR_SCI, ~CollectorID, inline = TRUE),
@@ -83,10 +82,52 @@ bscols(
    
 ```
 
+<br>
+
+Need help with the dashboard?
+<p><a href="https://mail.google.com/mail/?view=cm&fs=1&to=emma.jones@deq.virginia.gov">send email</a></p></span>
+
+Map {data-icon="fa-globe"}
+=====================================  
+
+Column {data-width=200}
+-------------------------------------
 
 
+### Site Map
 
-SCI Scores
+```{r site map, echo=FALSE}
+
+#mapview(shared_sites_sf, label= sites_sf$StationID) # mapview doesnt work with crosstalk, yet
+
+CreateWebMap(maps = c("Topo","Imagery","Hydrography"), collapsed = TRUE) %>%
+  setView(-78, 37.5, zoom=6) %>%
+  addCircleMarkers(data=shared_sites_sf,color='yellow', fillColor='blue', radius = 5,
+                   fillOpacity = 0.5,opacity=1,weight = 2,stroke=T,group="sites",
+                   label = ~StationID,
+                   popup=~paste(sep='<br>',
+                                paste(strong('StationID : '), StationID),
+                                paste(strong('Location :'), Location),
+                                paste(strong('Stream Name : '), StreamName),
+                                paste(strong('Basin : '), Basin),
+                                paste(strong('DEQ Region : '), Region),
+                                paste(strong('County : '), County),
+                                paste(strong('Ecoregion Code : '), EcoregionCode),
+                                paste(strong('EcoRegion : '), EcoRegion))) %>%
+  inlmisc::AddHomeButton(raster::extent(-83.89, -74.80, 36.54, 39.98), position = "topleft") %>%
+  inlmisc::AddSearchButton(group = "sites", zoom = 15,propertyName = "label",
+                           textPlaceholder = "Search stations") %>%
+  addLayersControl(baseGroups=c("Topo","Imagery","Hydrography"),
+                       overlayGroups = c('sites'),
+                       options=layersControlOptions(collapsed=T),
+                       position='topleft')
+  
+
+
+```
+
+
+SCI Scores {data-icon="fa-bar-chart"}
 =====================================  
 
 Column {data-width=200}
@@ -119,13 +160,13 @@ plot_ly(shared_IR_SCI, x = ~CollDate, y = ~`SCI`, type = 'bar',
   datatable(shared_IR_SCI_Table,extensions = 'Buttons',  rownames = FALSE,
             options=list(dom= 'Bt', deferRender=TRUE, scrollY=250,scroller=TRUE, 
                          buttons=list('copy','colvis'))) %>% # this table does update and filter on 'method' selection
-  DT::formatStyle(columns = c(1:73), fontSize = '75%')
+  DT::formatStyle(columns = c(1:73), fontSize = '80%')
 
 ```
 
 
 
-Habitat Scores
+Habitat Scores {data-icon="fa-bar-chart"}
 =====================================  
 
 Column {data-width=200}
@@ -194,7 +235,7 @@ datatable(shared_IR_HAB_heatmap, escape = F, rownames = F, extensions = 'Buttons
 
 
 
-Station Summary {data-orientation=rows}
+Station Summary {data-orientation=rows data-icon="fa-calculator"}
 =====================================  
 
 Row {data-height=325}
@@ -215,7 +256,7 @@ datatable(shared_IR_SCI_HAB2, extensions = 'Buttons',  rownames = FALSE,
 
 
 
-Row
+Row 
 -------------------------------------
 
 
@@ -250,45 +291,8 @@ datatable(shared_IR_SCI_Raw, extensions = 'Buttons',  rownames = FALSE, options 
 ```
 
 
-Row
--------------------------------------
 
-
-### Site Map
-
-```{r site map, echo=FALSE}
-
-#mapview(shared_sites_sf, label= sites_sf$StationID) # mapview doesnt work with crosstalk, yet
-
-CreateWebMap(maps = c("Topo","Imagery","Hydrography"), collapsed = TRUE) %>%
-  setView(-78, 37.5, zoom=6) %>%
-  addCircleMarkers(data=shared_sites_sf,color='yellow', fillColor='blue', radius = 5,
-                   fillOpacity = 0.5,opacity=1,weight = 2,stroke=T,group="sites",
-                   label = ~StationID,
-                   popup=~paste(sep='<br>',
-                                paste(strong('StationID : '), StationID),
-                                paste(strong('Location :'), Location),
-                                paste(strong('Stream Name : '), StreamName),
-                                paste(strong('Basin : '), Basin),
-                                paste(strong('DEQ Region : '), Region),
-                                paste(strong('County : '), County),
-                                paste(strong('Ecoregion Code : '), EcoregionCode),
-                                paste(strong('EcoRegion : '), EcoRegion))) %>%
-  inlmisc::AddHomeButton(raster::extent(-83.89, -74.80, 36.54, 39.98), position = "topleft") %>%
-  inlmisc::AddSearchButton(group = "sites", zoom = 15,propertyName = "label",
-                           textPlaceholder = "Search stations") %>%
-  addLayersControl(baseGroups=c("Topo","Imagery","Hydrography"),
-                       overlayGroups = c('sites'),
-                       options=layersControlOptions(collapsed=T),
-                       position='topleft')
-  
-
-
-```
-
-
-
-Assessment Decision {data-orientation=columns}
+Assessment Decision {data-orientation=columns data-icon="fa-balance-scale"}
 =====================================  
 
 Column {data-width=200}
