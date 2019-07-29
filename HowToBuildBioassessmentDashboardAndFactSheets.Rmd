@@ -52,10 +52,10 @@ totalHab2 <- filter(totalHab1, !is.na(catComment)) %>%
   group_by(HabSampID) %>%
   dplyr::summarise(catCommentSample = paste(catComment, collapse = '; '))
 totalHab3 <- left_join(totalHab1, totalHab2, by= 'HabSampID') %>%
-  select(-c(Comments,catComment))
+  select(-c(Comments,catComment,EnterDate)) # just picked one table to use Enter Date from to avoid losing samples based on differences in value
   
 
-totalHabitat <- suppressWarnings(left_join(totalHab3,totHabCon, by=c('HabSampID', 'EnterDate'))) %>%
+totalHabitat <- suppressWarnings(left_join(totalHab3,totHabCon, by=c('HabSampID'))) %>%
   mutate(finalComments = paste('Sample Comments: ', Comments,
                                'HabParameter Comments: ', catCommentSample)) %>%
   select(-c(Comments,catCommentSample)) %>%
